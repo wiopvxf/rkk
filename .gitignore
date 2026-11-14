@@ -1,0 +1,20 @@
+# 真实木马样本不进仓库（哈希与 IOC 已在 docs/ 内）
+samples/*.zip
+samples/*.bin
+samples/*.malware
+samples/*.so
+samples/*.so.*
+samples/*.placeholder
+samples/*.tmp_copy
+samples/orig_*
+
+# 预编译产物
+dist/*.exe
+dist/rkk-linux-*
+!dist/SHA256SUMS
+
+# 本地
+*.log
+*.tmp
+/build/
+/testdata/tmp/

