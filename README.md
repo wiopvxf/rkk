@@ -71,7 +71,7 @@
 
 ## 它具体拦什么、改回什么
 
-**布防点（76 处）** 覆盖木马的全部落点：
+**布防点** 覆盖木马的已知全部落点（含同家族变种）：
 
 ```
 /var/lib/systemd/cache-service        /usr/local/lib/.system-service
@@ -85,6 +85,8 @@
 /dev/shm/.orig_rm|.orig_kill|.orig_passwd|.orig_chattr
 …以及 /etc/.fontconfig-cache 等伪装目录
 ```
+
+**抗变种（1.1.0 起）**：固定落点会被改（同家族换机器时把 `/var/tmp/876c7af6` 换成别的随机名），所以额外加了一层**内容扫描**——不认文件名、只认内容，凡出现 `.x/black3` 或 `digitaldatainsights` 的文件即判定为下载器/持久化脚本。换名换目录照样抓到。
 
 **回滚方式**：
 

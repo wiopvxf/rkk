@@ -2,16 +2,17 @@
 // 的检测与清除工具。
 //
 // 设计要点：
-//   1. 全静态编译（CGO_ENABLED=0），不经过 ld.so / libc，因此 /etc/ld.so.preload 里的
-//      恶意库无法劫持本进程；它读到的 /proc、目录列表、文件内容都是真实的。
-//   2. 只用 Go 原生 syscall（Kill / Ioctl），不依赖 /usr/bin/kill、rm、chattr 等
-//      可能已被木马替换的命令。
-//   3. 默认只读扫描；必须显式 -clean -yes 才会改动系统，改动前全部备份。
+//  1. 全静态编译（CGO_ENABLED=0），不经过 ld.so / libc，因此 /etc/ld.so.preload 里的
+//     恶意库无法劫持本进程；它读到的 /proc、目录列表、文件内容都是真实的。
+//  2. 只用 Go 原生 syscall（Kill / Ioctl），不依赖 /usr/bin/kill、rm、chattr 等
+//     可能已被木马替换的命令。
+//  3. 默认只读扫描；必须显式 -clean -yes 才会改动系统，改动前全部备份。
 //
 // 用法：
-//   ./rkk                  扫描（只读）
-//   ./rkk -clean -yes      执行清除（先备份）
-//   ./rkk -clean -yes -aggressive   额外处理 node 账户等可疑但可能属业务的项
+//
+//	./rkk                  扫描（只读）
+//	./rkk -clean -yes      执行清除（先备份）
+//	./rkk -clean -yes -aggressive   额外处理 node 账户等可疑但可能属业务的项
 package main
 
 import (
@@ -31,7 +32,7 @@ import (
 	"unsafe"
 )
 
-const version = "1.0.0"
+const version = "1.1.0"
 
 // rootDir 非空时所有文件操作都指向该目录（用于扫描/清理挂载的离线镜像）
 var rootDir = os.Getenv("RKK_ROOT")
@@ -96,6 +97,10 @@ var payloadPaths = []string{
 	"/tmp/processhider_debug.log",
 	"/dev/shm/.ph-dbg",
 	"/var/tmp/876c7af6/01b51ec6",
+	// 2026-05 公开报告中的同一家族变种（目录名不同、机制相同）
+	"/usr/bin/.locatione",
+	"/var/tmp/.ladyg0g0",
+	"/var/tmp/.ladyg0g0/.pr1nc35",
 }
 
 // 伪装成系统缓存/配置的目录（木马自建，非用户数据）
@@ -130,6 +135,8 @@ var payloadGlobs = []string{
 	"/usr/local/lib/*.hider.*",
 	"/tmp/.libnss_cache.so*",
 	"/var/tmp/876c7af6",
+	"/var/tmp/*/.locatione",
+	"/var/tmp/*/.pr1nc35",
 	"/tmp/.child-trace-*",
 	"/tmp/.watchdog-trace-*",
 }
@@ -150,6 +157,9 @@ var procKeywords = []string{
 	"dbus-system-helper",
 	"systemd-journald-helper",
 	"ph-dbg",
+	".x/black3",
+	".locatione",
+	".pr1nc35",
 }
 
 var envMarkers = []string{
@@ -173,6 +183,22 @@ var unitContentMarkers = []string{
 	"systemd-resolved-helper", "systemd-networkd-helper", "systemd-timesyncd-helper",
 	"dbus-system-helper", "systemd-journald-helper", ".system-service", "cache-service",
 	"/var/tmp/876c7af6", "01b51ec6",
+	// 变种泛化：unit 里直接调用 ssshd / 拉 C2 脚本
+	"ssshd", ".x/black3", "digitaldatainsights",
+}
+
+// 内容特征：不看文件名、不看目录名，直接看文件内容。
+// 木马每次行动会换目录名/文件名（如 /var/tmp/876c7af6 → /var/tmp/efccd9d5），
+// 但下发地址和命令形式是稳定的，所以按内容抓比按路径抓更抗变种。
+var dropperMarkers = []string{
+	".x/black3",
+	"digitaldatainsights",
+}
+
+var dropperScanDirs = []string{
+	"/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
+	"/usr/lib/systemd/system", "/etc/systemd/system",
+	"/var/tmp", "/tmp", "/dev/shm", "/var/spool/cron/crontabs",
 }
 
 var rcLineMarkers = []string{
@@ -481,9 +507,38 @@ func runCmd(timeout time.Duration, name string, args ...string) (string, error) 
 
 // ---------------------------------------------------------------- 扫描
 
+// scanDroppers 按“内容”查找下载器/持久化脚本，用于识别换过目录名的变种。
+// 只读不删；单文件上限 1MB，避免误读大二进制。
+func scanDroppers() []string {
+	var hits []string
+	for _, d := range dropperScanDirs {
+		ents, err := os.ReadDir(rp(d))
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			if e.IsDir() {
+				continue
+			}
+			f := filepath.Join(d, e.Name())
+			if isVaccine(f) {
+				continue
+			}
+			if info, err := e.Info(); err != nil || info.Size() > 1<<20 {
+				continue
+			}
+			if containsAny(readSmall(f, 1<<20), dropperMarkers...) {
+				hits = append(hits, f)
+			}
+		}
+	}
+	return hits
+}
+
 func doScan() []Finding {
 	var fs []Finding
 
+	seen := map[string]bool{}
 	add := func(kind, target, detail string) {
 		if rootDir != "" {
 			target = strings.TrimPrefix(target, rootDir)
@@ -491,6 +546,11 @@ func doScan() []Finding {
 				target = "/"
 			}
 		}
+		key := kind + "|" + target
+		if seen[key] {
+			return
+		}
+		seen[key] = true
 		fs = append(fs, Finding{kind, target, detail})
 	}
 
@@ -508,6 +568,10 @@ func doScan() []Finding {
 				add("FILE", m, "恶意载荷残留")
 			}
 		}
+	}
+	// 2b) 内容特征（抗变种：目录名/文件名被改过也能抓到）
+	for _, f := range scanDroppers() {
+		add("FILE", f, "内容含 C2 下发地址（疑似下载器/持久化脚本）")
 	}
 	// 3) 伪装目录
 	for _, d := range decoyDirs {
@@ -1063,7 +1127,7 @@ func (c *Cleaner) cleanSSH() {
 		s := readSmall(f, 1<<20)
 		if containsAny(s, "Match User ninel", "updates-20260202") || strings.Contains(s, "StrictModes no") {
 			c.backup(f)
-			if fileExists(f+".pm-bak") {
+			if fileExists(f + ".pm-bak") {
 				if data, err := os.ReadFile(rp(f + ".pm-bak")); err == nil && !containsAny(string(data), "Match User ninel", "updates-20260202", "StrictModes no") {
 					if err := writeAtomic(f, string(data), 0644); err == nil {
 						c.Changed++
@@ -1262,6 +1326,10 @@ func (c *Cleaner) cleanPayloads() {
 			c.removed(d, "伪装目录")
 		}
 	}
+	// 内容命中的下载器脚本（变种换了目录名也能清到）
+	for _, f := range scanDroppers() {
+		c.removed(f, "含 C2 地址的下载器脚本")
+	}
 	// 被替换的核心命令：检测 UPX 壳并给出修复命令
 	for _, b := range []string{"/usr/bin/rm", "/usr/bin/kill", "/usr/bin/chattr", "/usr/bin/passwd", "/usr/bin/chpasswd", "/usr/sbin/kill", "/usr/sbin/chattr"} {
 		if !fileExists(b) {
@@ -1275,4 +1343,3 @@ func (c *Cleaner) cleanPayloads() {
 }
 
 // ---------------------------------------------------------------- 入口
-

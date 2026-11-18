@@ -152,3 +152,37 @@ ssshd
 systemd-resolved-helper / systemd-networkd-helper / systemd-timesyncd-helper
 dbus-system-helper / systemd-journald-helper
 update-checker
+
+## 8. 同家族其他变种（公开情报，2026-05 事件）
+说明：同一家族（Diicot / color1337 / ElPatrono1337）在不同受害机上会换目录名与文件名，
+但「C2 下发地址 + ssshd 拉脚本 + myservices.service」这套骨架不变。
+本机样本用 /var/tmp/876c7af6，公开样本用 /var/tmp/efccd9d5、/var/tmp/07818e53。
+
+### 8.1 路径
+/usr/lib/systemd/system/myservices.service    Restart=always, ExecStart=/bin/bash /usr/bin/ssshd
+/usr/bin/ssshd                                拉 C2 脚本并 | bash
+/usr/bin/.locatione                           内容为临时目录路径（如 /var/tmp/efccd9d5）
+/var/tmp/.ladyg0g0/.pr1nc35                   内容为临时目录路径（如 /var/tmp/07818e53）
+/var/tmp/efccd9d5
+/var/tmp/07818e53
+
+### 8.2 账户
+node:x:1001:1001::/home/node:/bin/bash        攻击者新建，用于在网内横向登录
+
+### 8.3 哈希
+d704e0510b6b825b45df05fb6ce6031a1ec0e67a7b5c83a2a0a26928ea7ed993   公开样本（2026-05-28 提交）
+
+### 8.4 C2 / 攻击者地址（公开版本已脱敏）
+***.***   /.x/black3 主 C2（另有域名回退 digital.digitaldatainsights.org）
+***.***   域名 digital.digitaldatainsights.org 的 A 记录（载荷服务器）
+***.***   test. 子域（C2 + 矿池）
+***.***   web. 子域（旧载荷服务器）
+***.***   旧载荷服务器
+***.***   反连 C2
+***.***   暴力破解入口 IP（VMHeaven.io）
+***.***   横向爆破来源网段之一
+
+### 8.5 内容型检测（抗变种，推荐优先用这个）
+只要文件内容出现下列任一串，即可判定为下载器/持久化脚本，与文件名、目录名无关：
+.x/black3
+digitaldatainsights

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.0] - 2026-11-18
+
+### Added
+- 内容型检测（`scanDroppers`）：按文件内容匹配 `.x/black3`、`digitaldatainsights`，
+  不再依赖固定目录名。同家族变种每次入侵会更换 `/var/tmp/<随机名>`，原规则会漏。
+- 新增落点：`/usr/bin/.locatione`、`/var/tmp/.ladyg0g0/.pr1nc35`、`/var/tmp/*/.locatione`、`/var/tmp/*/.pr1nc35`。
+- 新增进程关键字：`.x/black3`、`.locatione`、`.pr1nc35`。
+- 新增 unit 内容特征：`ssshd`、`.x/black3`、`digitaldatainsights`。
+- 清除阶段同步删除内容命中的下载器脚本（先备份）。
+
+### Changed
+- 扫描结果去重，同一目标不再重复列出。
+
+
 ## 1.0.0 — 2026-11-14
 
 首个公开版本。
