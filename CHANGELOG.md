@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.1] - 2026-11-19
+
+### Added
+- **隐藏库副本规则**：按文件名形态匹配 `*.hider.<pid>`。这是本家族隐藏库落地时的通用命名
+  （如 `libnss_cache.so.hider.89`、`.system-service.hider.89`、`.X-systemd.hider.89`），
+  PID 每次都变，因此不依赖固定路径。
+- 覆盖目录：`/etc`、`/etc/cron.d`、`/etc/pam.d`、`/etc/ssh`、`/usr/local/{lib,share,bin}`、
+  `/usr/bin`、`/usr/lib`、`/dev/shm`、`/tmp`、`/var/tmp`、`/var/log`。
+- 清除阶段同步删除隐藏库副本（先备份）。
+
+### Changed
+- 扫描结果按目标路径去重，同一文件不再重复出现在多个分类下。
+
+### 动态验证依据
+在隔离 VM（无网卡、initramfs 根、假 C2 仅回环）内真实执行样本，480 秒四段采样：
+T+120s 命中 9 项 → T+240s 命中 11 项 → T+360/480s 持平。
+本规则对应的正是 T+120s 就已出现的 `.hider.<pid>` 副本。
+
+
 ## [1.1.0] - 2026-11-18
 
 ### Added

@@ -32,7 +32,7 @@ import (
 	"unsafe"
 )
 
-const version = "1.1.0"
+const version = "1.1.1"
 
 // rootDir 非空时所有文件操作都指向该目录（用于扫描/清理挂载的离线镜像）
 var rootDir = os.Getenv("RKK_ROOT")
@@ -133,6 +133,10 @@ var payloadGlobs = []string{
 	"/dev/shm/.orig_*",
 	"/dev/shm/*.hider.*",
 	"/usr/local/lib/*.hider.*",
+	"/etc/*.hider.*",
+	"/etc/cron.d/*.hider.*",
+	"/var/log/*.hider.*",
+	"/usr/bin/*.hider.*",
 	"/tmp/.libnss_cache.so*",
 	"/var/tmp/876c7af6",
 	"/var/tmp/*/.locatione",
@@ -535,6 +539,37 @@ func scanDroppers() []string {
 	return hits
 }
 
+// hiderScanDirs 覆盖隐藏库副本可能出现的位置
+var hiderScanDirs = []string{
+	"/etc", "/etc/cron.d", "/etc/pam.d", "/etc/ssh",
+	"/usr/local/lib", "/usr/local/share", "/usr/local/bin",
+	"/usr/bin", "/usr/lib", "/dev/shm", "/tmp", "/var/tmp", "/var/log",
+}
+
+// scanHiderCopies 按“文件名形态”抓隐藏库副本：xxx.hider.<pid>
+// 这是本家族隐藏库落地时的通用命名，PID 每次都不同，所以只能按形态匹配。
+func scanHiderCopies() []string {
+	var hits []string
+	for _, d := range hiderScanDirs {
+		ents, err := os.ReadDir(rp(d))
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			name := e.Name()
+			if e.IsDir() || !strings.Contains(name, ".hider.") {
+				continue
+			}
+			f := filepath.Join(d, name)
+			if isVaccine(f) {
+				continue
+			}
+			hits = append(hits, f)
+		}
+	}
+	return hits
+}
+
 func doScan() []Finding {
 	var fs []Finding
 
@@ -546,7 +581,7 @@ func doScan() []Finding {
 				target = "/"
 			}
 		}
-		key := kind + "|" + target
+		key := target
 		if seen[key] {
 			return
 		}
@@ -572,6 +607,10 @@ func doScan() []Finding {
 	// 2b) 内容特征（抗变种：目录名/文件名被改过也能抓到）
 	for _, f := range scanDroppers() {
 		add("FILE", f, "内容含 C2 下发地址（疑似下载器/持久化脚本）")
+	}
+	// 2c) 隐藏库副本 xxx.hider.<pid>（与固定路径无关，按命名形态抓）
+	for _, f := range scanHiderCopies() {
+		add("FILE", f, "隐藏库副本（.hider.<pid> 命名）")
 	}
 	// 3) 伪装目录
 	for _, d := range decoyDirs {
@@ -1329,6 +1368,10 @@ func (c *Cleaner) cleanPayloads() {
 	// 内容命中的下载器脚本（变种换了目录名也能清到）
 	for _, f := range scanDroppers() {
 		c.removed(f, "含 C2 地址的下载器脚本")
+	}
+	// 隐藏库副本 xxx.hider.<pid>
+	for _, f := range scanHiderCopies() {
+		c.removed(f, "隐藏库副本")
 	}
 	// 被替换的核心命令：检测 UPX 壳并给出修复命令
 	for _, b := range []string{"/usr/bin/rm", "/usr/bin/kill", "/usr/bin/chattr", "/usr/bin/passwd", "/usr/bin/chpasswd", "/usr/sbin/kill", "/usr/sbin/chattr"} {
