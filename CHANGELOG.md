@@ -14,6 +14,9 @@
 - **运维自伤误报**：`bash`/`grep`/`tail`/`systemctl` 等排障命令因为命令行里带了关键字
   而被判定为木马进程的情况已排除；环境变量标记仍然优先。
 
+### Tools
+- 新增 `tools/lab-fullstate.sh`：合成全链终态自检，验证检出与清除（PASS）
+
 ### 动态验证依据
 systemd 真启动环境采样：T+90s 19 项 → T+240s 21 项 → T+360s 22 项（仍在增长）。
 直读确认 `/etc/ld.so.preload` 不存在、`nsswitch` 未注入 `ninel`、`pam.d` 无 `pam_master`，
