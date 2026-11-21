@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.1.2] - 2026-11-21
+
+### Added
+- 隐藏库扫描目录补齐 `lib` 全路径：`/usr/lib64`、`/usr/lib/x86_64-linux-gnu`、
+  `/usr/lib/aarch64-linux-gnu`、`/lib`、`/lib64`、`/lib/x86_64-linux-gnu`。
+  第二阶段实测确认 `libnss_ninel.so.2.hider.<pid>` 会被投到这几处。
+- 0 字节占位单独提示："安装器已就位，等 C2 下发真实载荷"。
+
+### Fixed
+- **内核线程误报**：`[khugepaged]`、`[watchdog/0]` 这类无 `exe`、`comm` 带方括号的
+  进程不再计入。
+- **运维自伤误报**：`bash`/`grep`/`tail`/`systemctl` 等排障命令因为命令行里带了关键字
+  而被判定为木马进程的情况已排除；环境变量标记仍然优先。
+
+### 动态验证依据
+systemd 真启动环境采样：T+90s 19 项 → T+240s 21 项 → T+360s 22 项（仍在增长）。
+直读确认 `/etc/ld.so.preload` 不存在、`nsswitch` 未注入 `ninel`、`pam.d` 无 `pam_master`，
+六个 `libnss_ninel.so.2.hider.*` 全为 0 字节 → 真实载荷依赖 C2 下发。
+
+
+
 ## [1.1.1] - 2026-11-19
 
 ### Added

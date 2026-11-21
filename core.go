@@ -32,7 +32,7 @@ import (
 	"unsafe"
 )
 
-const version = "1.1.1"
+const version = "1.1.2"
 
 // rootDir 非空时所有文件操作都指向该目录（用于扫描/清理挂载的离线镜像）
 var rootDir = os.Getenv("RKK_ROOT")
@@ -347,16 +347,30 @@ func scanProcs() []procInfo {
 	return out
 }
 
+// benignExecs 是排障时常见的解释器/查看类工具。
+// 运维人员 grep 关键字时，自身命令行会带上这些名字，不能算命中。
+var benignExecs = []string{
+	"/bash", "/sh", "/dash", "/zsh", "/grep", "/egrep", "/fgrep",
+	"/cat", "/tail", "/head", "/less", "/find", "/ps", "/top",
+	"/systemctl", "/journalctl", "/awk", "/sed", "/vi", "/vim", "/nano",
+}
+
 func (p procInfo) match() (bool, string) {
-	if p.PID == os.Getpid() || p.Comm == "rkk" || p.Comm == "rkk" {
+	if p.PID == os.Getpid() || p.Comm == "rkk" {
 		return false, ""
+	}
+	// 环境变量标记优先级最高：带标记就是被感染者本体或其子进程
+	if containsAny(p.Env, envMarkers...) {
+		return true, "进程环境变量含木马标记"
+	}
+	for _, b := range benignExecs {
+		if strings.HasSuffix(p.Exe, b) {
+			return false, ""
+		}
 	}
 	hay := p.Comm + " " + p.Cmdline + " " + p.Exe + " " + p.Maps
 	if containsAny(hay, procKeywords...) {
 		return true, "进程名/命令行/加载库命中"
-	}
-	if containsAny(p.Env, envMarkers...) {
-		return true, "进程环境变量含木马标记"
 	}
 	return false, ""
 }
@@ -543,7 +557,9 @@ func scanDroppers() []string {
 var hiderScanDirs = []string{
 	"/etc", "/etc/cron.d", "/etc/pam.d", "/etc/ssh",
 	"/usr/local/lib", "/usr/local/share", "/usr/local/bin",
-	"/usr/bin", "/usr/lib", "/dev/shm", "/tmp", "/var/tmp", "/var/log",
+	"/usr/bin", "/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu",
+	"/usr/lib/aarch64-linux-gnu", "/lib", "/lib64", "/lib/x86_64-linux-gnu",
+	"/dev/shm", "/tmp", "/var/tmp", "/var/log",
 }
 
 // scanHiderCopies 按“文件名形态”抓隐藏库副本：xxx.hider.<pid>
@@ -568,6 +584,15 @@ func scanHiderCopies() []string {
 		}
 	}
 	return hits
+}
+
+// fileSize 返回文件字节数；不跟随悬空符号链接
+func fileSize(path string) (int64, bool) {
+	info, err := os.Lstat(rp(path))
+	if err != nil {
+		return 0, false
+	}
+	return info.Size(), true
 }
 
 func doScan() []Finding {
@@ -610,7 +635,11 @@ func doScan() []Finding {
 	}
 	// 2c) 隐藏库副本 xxx.hider.<pid>（与固定路径无关，按命名形态抓）
 	for _, f := range scanHiderCopies() {
-		add("FILE", f, "隐藏库副本（.hider.<pid> 命名）")
+		if sz, ok := fileSize(f); ok && sz == 0 {
+			add("FILE", f, "0 字节占位（安装器已就位，等 C2 下发真实载荷）")
+		} else {
+			add("FILE", f, "隐藏库副本（.hider.<pid> 命名）")
+		}
 	}
 	// 3) 伪装目录
 	for _, d := range decoyDirs {

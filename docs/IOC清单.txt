@@ -186,3 +186,9 @@ d704e0510b6b825b45df05fb6ce6031a1ec0e67a7b5c83a2a0a26928ea7ed993   公开样本�
 只要文件内容出现下列任一串，即可判定为下载器/持久化脚本，与文件名、目录名无关：
 .x/black3
 digitaldatainsights
+
+## 10. 第二阶段落地路径（systemd 环境实测）
+/usr/lib{,64,/<arch>-linux-gnu}/libnss_ninel.so.2.hider.<pid>   NSS 模块占位
+/usr/local/bin/systemd-resolved-helper                          伪装 helper
+/etc/systemd/system/systemd-resolved-cache.service              伪装 unit（常为 mask 到 /dev/null）
+说明：C2 不通时以上文件为 0 字节；真实 ninel/pam_master/ssshd 需 C2 下发。
