@@ -192,3 +192,17 @@ digitaldatainsights
 /usr/local/bin/systemd-resolved-helper                          伪装 helper
 /etc/systemd/system/systemd-resolved-cache.service              伪装 unit（常为 mask 到 /dev/null）
 说明：C2 不通时以上文件为 0 字节；真实 ninel/pam_master/ssshd 需 C2 下发。
+
+## 11. 文件哈希（154.219.110.37 事件确认）
+6b9e912f408b96ac92b400e8c4f373626ff810085008a9eddba6957520bd9edf  木马本体 41,057,364B
+2981d2bd2e3082d0acc96e6150594cacac55da17b638282d5e8b0ed45b81d213  NSS 投毒库 14,400B
+37716b71a43235520d1e782817eafc0ab6e72226d5a13daa501ff8b03e915683  隐藏器 49,152B
+6e068b7320fd79565d3cb6b06e0d7b3c388d9e725f30cdf4e773be97601650fe  /dev/shm/.orig_passwd
+110fe78e84da5cefdf7e6b8b34b74a47459d10f635b385f4fa3418e40f5b60e7  /dev/shm/.orig_chattr
+bdb1e0ec5c1b91a0609c1cccfa8e2502e54971098260a867a24878682d6c4593  /dev/shm/.orig_rm
+79827cd008c3158399ffda92e85bbbf2c5d79cf17ffc8496ffdce05f20df08a3  /dev/shm/.orig_kill
+
+## 12. 隐藏方式（必须用系统接口才查得到）
+- NSS 隐藏账户：getent passwd 有、/etc/passwd 无（本例 ninel, uid=9999, home=/dev/null）
+- 幻影 crontab：crontab -l 有、/var/spool/cron/crontabs/root 无
+- 关键命令替换：ls/rm/passwd/chattr/kill/apt/apt-get 被换，原件在 /dev/shm/.orig_*

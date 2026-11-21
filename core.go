@@ -20,8 +20,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,7 +34,7 @@ import (
 	"unsafe"
 )
 
-const version = "1.1.2"
+const version = "1.1.3"
 
 // rootDir 非空时所有文件操作都指向该目录（用于扫描/清理挂载的离线镜像）
 var rootDir = os.Getenv("RKK_ROOT")
@@ -78,6 +80,8 @@ var payloadPaths = []string{
 	"/lib/aarch64-linux-gnu/security/pam_master.so",
 	"/usr/lib64/security/pam_master.so",
 	"/usr/local/bin/systemd-resolved-helper",
+	"/usr/local/bin/system-monitor",
+	"/usr/local/sbin/system-monitor",
 	"/usr/local/bin/systemd-networkd-helper",
 	"/usr/local/bin/systemd-timesyncd-helper",
 	"/usr/local/bin/dbus-system-helper",
@@ -586,6 +590,176 @@ func scanHiderCopies() []string {
 	return hits
 }
 
+// ---------------------------------------------------------------- 新增检测（来自受害机取证报告）
+
+// knownHashes 是 154.219.110.37 事件中确认的恶意/被替换文件哈希。
+// .orig_* 是被替换前的原件，哈希命中的意义是"取证线索"，不是"要删的恶意文件"。
+var knownHashes = map[string]string{
+	"6b9e912f408b96ac92b400e8c4f373626ff810085008a9eddba6957520bd9edf": "UPX 静态木马（41,057,364B）",
+	"2981d2bd2e3082d0acc96e6150594cacac55da17b638282d5e8b0ed45b81d213": "NSS 投毒库 libnss_cache.so（14,400B）",
+	"37716b71a43235520d1e782817eafc0ab6e72226d5a13daa501ff8b03e915683": "隐藏器 ELF（49,152B）",
+	"6e068b7320fd79565d3cb6b06e0d7b3c388d9e725f30cdf4e773be97601650fe": "/dev/shm/.orig_passwd（被替换前原件·取证用）",
+	"110fe78e84da5cefdf7e6b8b34b74a47459d10f635b385f4fa3418e40f5b60e7": "/dev/shm/.orig_chattr（被替换前原件·取证用）",
+	"bdb1e0ec5c1b91a0609c1cccfa8e2502e54971098260a867a24878682d6c4593": "/dev/shm/.orig_rm（被替换前原件·取证用）",
+	"79827cd008c3158399ffda92e85bbbf2c5d79cf17ffc8496ffdce05f20df08a3": "/dev/shm/.orig_kill（被替换前原件·取证用）",
+}
+
+func fileSHA256(path string) (string, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, io.LimitReader(f, 64<<20)); err != nil {
+		return "", false
+	}
+	return hex.EncodeToString(h.Sum(nil)), true
+}
+
+// scanKnownHashes 按哈希比对，父目录深度限制 3，跳过 0 字节与 >60MB（41MB 样本例外）
+func scanKnownHashes() []Finding {
+	var out []Finding
+	dirs := []string{"/usr/local/lib", "/usr/local/bin", "/usr/local/sbin",
+		"/tmp", "/var/tmp", "/dev/shm", "/opt", "/root", "/www"}
+	for _, d := range dirs {
+		filepath.WalkDir(rp(d), func(p string, de fs.DirEntry, err error) error {
+			if err != nil || de == nil || de.IsDir() {
+				return nil
+			}
+			rel, _ := filepath.Rel(rp(d), p)
+			if strings.Count(rel, string(filepath.Separator)) > 3 {
+				return nil
+			}
+			info, ierr := de.Info()
+			if ierr != nil || info.Size() == 0 || info.Size() > 60<<20 {
+				return nil
+			}
+			h, ok := fileSHA256(p)
+			if !ok {
+				return nil
+			}
+			if desc, hit := knownHashes[h]; hit {
+				out = append(out, Finding{"FILE", strings.TrimPrefix(p, rootDir), "命中已知恶意文件哈希：" + desc})
+			}
+			return nil
+		})
+	}
+	return out
+}
+
+// scanHiddenAccounts 比对 getent passwd 与 /etc/passwd：
+// 只在 NSS 层存在的账户 = 被 libnss_cache/ninel 伪造出来的后门账户。
+func scanHiddenAccounts() []Finding {
+	var out []Finding
+	if rootDir != "" {
+		return nil
+	}
+	raw, err := runCmd(10*time.Second, "getent", "passwd")
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	pw := readSmall("/etc/passwd", 1<<20)
+	for _, line := range strings.Split(raw, "\n") {
+		f := strings.Split(line, ":")
+		if len(f) < 7 || f[0] == "" {
+			continue
+		}
+		name, uid, home, shell := f[0], f[2], f[5], f[6]
+		if strings.Contains(pw, "\n"+name+":") || strings.HasPrefix(pw, name+":") {
+			continue
+		}
+		if !strings.Contains(shell, "sh") {
+			continue
+		}
+		susp := name == "ninel" || home == "/dev/null" ||
+			strings.HasPrefix(home, "/tmp") || strings.HasPrefix(home, "/var/tmp")
+		if !susp {
+			continue
+		}
+		out = append(out, Finding{"ACCOUNT", "/etc/passwd",
+			fmt.Sprintf("NSS 隐藏账户 %s（uid=%s，home=%s）—— /etc/passwd 查不到，getent 能查到", name, uid, home)})
+	}
+	return out
+}
+
+// scanPhantomCron 检查"幻影定时任务"：crontab -l 有条目但 spool 文件缺失/为空
+func scanPhantomCron() []Finding {
+	var out []Finding
+	if rootDir != "" {
+		return nil
+	}
+	cl, err := runCmd(10*time.Second, "crontab", "-l")
+	if err != nil && strings.TrimSpace(cl) == "" {
+		return nil
+	}
+	cl = strings.TrimSpace(cl)
+	lc := strings.ToLower(cl)
+	// "no crontab for xxx" 是提示信息，不是条目
+	if cl == "" || strings.Contains(lc, "no crontab") {
+		return nil
+	}
+	// 只认像样的 cron 行（5 段或 @关键字）
+	real := 0
+	for _, l := range strings.Split(cl, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.HasPrefix(l, "#") {
+			continue
+		}
+		if strings.HasPrefix(l, "@") || len(strings.Fields(l)) >= 5 {
+			real++
+		}
+	}
+	if real == 0 {
+		return nil
+	}
+	// spool 读不到（权限）时不下结论
+	if _, err := os.Stat(rp("/var/spool/cron/crontabs/root")); err != nil && os.IsPermission(err) {
+		return nil
+	}
+	spool := strings.TrimSpace(readSmall("/var/spool/cron/crontabs/root", 1<<20))
+	if spool == "" {
+		out = append(out, Finding{"CONFIG", "/var/spool/cron/crontabs/root",
+			"crontab -l 有条目但 spool 不存在/为空（幻影定时任务，hook 伪造）"})
+	}
+	if strings.Contains(cl, "/var/tmp/") || strings.Contains(cl, "disown") {
+		out = append(out, Finding{"CONFIG", "root crontab",
+			"crontab 含临时目录路径或 disown 后台脱离（自愈任务特征）"})
+	}
+	return out
+}
+
+var criticalBins = []string{
+	"/bin/ls", "/bin/rm", "/bin/kill", "/bin/ps", "/bin/chmod", "/bin/chown",
+	"/usr/bin/passwd", "/usr/bin/chattr", "/usr/bin/apt", "/usr/bin/apt-get",
+	"/usr/bin/systemctl", "/usr/sbin/sshd", "/usr/bin/ssh", "/usr/bin/crontab",
+}
+
+// scanPkgChanges 只看关键二进制是否与官方包一致（dpkg -V 全量太吵，只挑关键项）
+func scanPkgChanges() []Finding {
+	var out []Finding
+	if rootDir != "" {
+		return nil
+	}
+	raw, _ := runCmd(30*time.Second, "dpkg", "-V")
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		for _, b := range criticalBins {
+			if f[1] == b {
+				out = append(out, Finding{"CONFIG", b,
+					"与官方包不一致（可能被替换；原件常在 /dev/shm/.orig_*）"})
+			}
+		}
+	}
+	return out
+}
+
 // fileSize 返回文件字节数；不跟随悬空符号链接
 func fileSize(path string) (int64, bool) {
 	info, err := os.Lstat(rp(path))
@@ -772,6 +946,23 @@ func doScan() []Finding {
 		if ok, why := p.match(); ok {
 			add("PROCESS", fmt.Sprintf("PID %d (%s)", p.PID, p.Comm), why+" | exe="+p.Exe)
 		}
+	}
+
+	// 15) 已知恶意文件哈希
+	for _, f := range scanKnownHashes() {
+		add(f.Kind, f.Target, f.Detail)
+	}
+	// 16) NSS 隐藏账户（getent 有、/etc/passwd 无）
+	for _, f := range scanHiddenAccounts() {
+		add(f.Kind, f.Target, f.Detail)
+	}
+	// 17) 幻影 crontab
+	for _, f := range scanPhantomCron() {
+		add(f.Kind, f.Target, f.Detail)
+	}
+	// 18) 关键命令被替换
+	for _, f := range scanPkgChanges() {
+		add(f.Kind, f.Target, f.Detail)
 	}
 
 	return fs

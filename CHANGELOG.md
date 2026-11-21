@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.1.3] - 2026-11-21
+
+依据受害机 154.219.110.37 的取证报告补齐四类检测：
+
+### Added
+- **已知哈希比对**：7 个文件哈希（木马本体、libnss_cache.so、隐藏器、`/dev/shm/.orig_*` 原件）。
+  只对大小合适的文件算哈希，扫描深度限制 3 层。
+- **NSS 隐藏账户**：`getent passwd` 有、`/etc/passwd` 没有的账户（`ninel` 就是这么藏起来的）。
+  这是本家族最隐蔽的一环——纯读文件永远发现不了。
+- **幻影 crontab**：`crontab -l` 有条目但 `/var/spool/cron/crontabs/root` 缺失/为空，
+  或条目含 `/var/tmp/`、`disown`。
+- **关键命令被替换**：`dpkg -V` 只筛 `/bin/ls`、`/bin/rm`、`/usr/bin/passwd`、`chattr`、`kill`、`apt` 等
+  关键二进制（全量 `dpkg -V` 噪声太大，不采用）。
+
+### Fixed
+- `crontab -l` 输出的 `no crontab for xxx` 曾被当成条目，导致误报；现在先过滤提示语，
+  且只认 5 段或 `@` 开头的真条目；spool 无权限读取时不下结论。
+
+
+
 ## [1.1.2] - 2026-11-21
 
 ### Added
